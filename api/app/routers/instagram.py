@@ -1,11 +1,18 @@
+import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
+from instagrapi import Client
+from instagrapi.exceptions import (
+    BadPassword,
+    ChallengeRequired,
+    LoginRequired,
+    TwoFactorRequired,
+)
 from pydantic import BaseModel
 from sqlalchemy import select
-from instagrapi.exceptions import LoginRequired
 
 from app.config import get_settings
 from app.crypto import decrypt_session, encrypt_session
@@ -26,6 +33,17 @@ router = APIRouter()
 # In-memory store for proxy tokens (TTL 10 min). In production, use Redis or DB table.
 _proxy_tokens: dict[str, dict] = {}
 
+# In-memory store for pending logins awaiting 2FA/challenge code
+_pending_logins: dict[str, dict] = {}
+
+
+def _make_client() -> Client:
+    cl = Client()
+    proxy_url = os.environ.get("RESIDENTIAL_PROXY_URL")
+    if proxy_url:
+        cl.set_proxy(proxy_url)
+    return cl
+
 
 class InitConnectResponse(BaseModel):
     proxy_url: str
@@ -42,6 +60,88 @@ class StatusResponse(BaseModel):
     ig_username: Optional[str]
     status: Optional[str]
     cooldown_seconds: Optional[int]
+
+
+class ConnectRequest(BaseModel):
+    username: str
+    password: str
+    user_id: str
+
+
+class ResolveChallengeRequest(BaseModel):
+    session_id: str
+    code: str
+    user_id: str
+
+
+@router.post("/connect")
+async def connect_instagram(_: AuthDep, body: ConnectRequest, db: DbDep):
+    """Login with username/password. Returns connected or challenge info."""
+    cl = _make_client()
+    try:
+        cl.login(body.username, body.password)
+        session_dict = cl.get_settings()
+        await upsert_session(db, body.user_id, str(cl.user_id), cl.username, session_dict)
+        return {"connected": True, "ig_username": cl.username}
+
+    except TwoFactorRequired:
+        session_id = str(uuid.uuid4())
+        _pending_logins[session_id] = {
+            "type": "2fa",
+            "username": body.username,
+            "password": body.password,
+            "user_id": body.user_id,
+            "expires_at": datetime.now(timezone.utc) + timedelta(minutes=10),
+        }
+        return {"requires_challenge": True, "challenge_type": "2fa", "session_id": session_id}
+
+    except ChallengeRequired:
+        session_id = str(uuid.uuid4())
+        # Initiate the challenge so Instagram sends the SMS/email code
+        try:
+            cl.challenge_resolve(cl.last_json)
+        except Exception:
+            pass
+        _pending_logins[session_id] = {
+            "type": "challenge",
+            "client": cl,
+            "user_id": body.user_id,
+            "expires_at": datetime.now(timezone.utc) + timedelta(minutes=10),
+        }
+        return {"requires_challenge": True, "challenge_type": "security_code", "session_id": session_id}
+
+    except BadPassword:
+        raise HTTPException(status_code=401, detail="Incorrect username or password")
+
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Login failed: {str(e)}")
+
+
+@router.post("/resolve-challenge")
+async def resolve_challenge(_: AuthDep, body: ResolveChallengeRequest, db: DbDep):
+    """Submit a 2FA or security challenge code to complete login."""
+    pending = _pending_logins.get(body.session_id)
+    if not pending:
+        raise HTTPException(status_code=404, detail="Session not found or expired")
+    if datetime.now(timezone.utc) > pending["expires_at"]:
+        _pending_logins.pop(body.session_id, None)
+        raise HTTPException(status_code=410, detail="Session expired, please start over")
+
+    try:
+        if pending["type"] == "2fa":
+            cl = _make_client()
+            cl.login(pending["username"], pending["password"], verification_code=body.code.strip())
+        else:
+            cl: Client = pending["client"]
+            cl.challenge_send_security_code(body.code.strip())
+
+        session_dict = cl.get_settings()
+        await upsert_session(db, body.user_id, str(cl.user_id), cl.username, session_dict)
+        _pending_logins.pop(body.session_id, None)
+        return {"connected": True, "ig_username": cl.username}
+
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Code incorrect or expired: {str(e)}")
 
 
 @router.post("/init-connect", response_model=InitConnectResponse)
