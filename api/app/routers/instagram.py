@@ -113,6 +113,23 @@ async def connect_instagram(_: AuthDep, body: ConnectRequest, db: DbDep):
     except BadPassword:
         raise HTTPException(status_code=401, detail="Incorrect username or password")
 
+    except TypeError as e:
+        if "NoneType" in str(e):
+            # instagrapi got an unexpected response — likely a checkpoint/unusual account state
+            session_id = str(uuid.uuid4())
+            _pending_logins[session_id] = {
+                "type": "challenge",
+                "client": cl,
+                "user_id": body.user_id,
+                "expires_at": datetime.now(timezone.utc) + timedelta(minutes=10),
+            }
+            try:
+                cl.challenge_resolve(cl.last_json)
+            except Exception:
+                pass
+            return {"requires_challenge": True, "challenge_type": "security_code", "session_id": session_id}
+        raise HTTPException(status_code=422, detail=f"Login failed: {str(e)}")
+
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Login failed: {str(e)}")
 
