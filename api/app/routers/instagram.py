@@ -115,18 +115,14 @@ async def connect_instagram(_: AuthDep, body: ConnectRequest, db: DbDep):
 
     except TypeError as e:
         if "NoneType" in str(e):
-            import traceback, logging
-            logging.error("instagrapi TypeError during login: %s", traceback.format_exc())
-            logging.error("cl.last_json: %s", cl.last_json)
-            # login may have partially succeeded, try to recover
-            try:
-                info = cl.account_info()
-                session_dict = cl.get_settings()
-                await upsert_session(db, body.user_id, str(info.pk), info.username, session_dict)
-                return {"connected": True, "ig_username": info.username}
-            except Exception as inner:
-                logging.error("account_info recovery failed: %s", inner)
-            raise HTTPException(status_code=422, detail=f"instagrapi parse error — check Railway logs. last_json keys: {list(cl.last_json.keys()) if cl.last_json else 'None'}")
+            last = cl.last_json or {}
+            msg = last.get("message", "")
+            if "wait" in msg.lower() or "few minutes" in msg.lower():
+                raise HTTPException(
+                    status_code=429,
+                    detail="Instagram is temporarily rate-limiting this server. Please wait 5–10 minutes and try again."
+                )
+            raise HTTPException(status_code=422, detail="Instagram returned an unexpected response. Please try again in a few minutes.")
         raise HTTPException(status_code=422, detail=f"Login failed: {str(e)}")
 
     except Exception as e:
