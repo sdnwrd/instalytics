@@ -115,19 +115,18 @@ async def connect_instagram(_: AuthDep, body: ConnectRequest, db: DbDep):
 
     except TypeError as e:
         if "NoneType" in str(e):
-            # instagrapi got an unexpected response — likely a checkpoint/unusual account state
-            session_id = str(uuid.uuid4())
-            _pending_logins[session_id] = {
-                "type": "challenge",
-                "client": cl,
-                "user_id": body.user_id,
-                "expires_at": datetime.now(timezone.utc) + timedelta(minutes=10),
-            }
+            # instagrapi parse error — login may have partially succeeded, try to recover
             try:
-                cl.challenge_resolve(cl.last_json)
+                info = cl.account_info()
+                session_dict = cl.get_settings()
+                await upsert_session(db, body.user_id, str(info.pk), info.username, session_dict)
+                return {"connected": True, "ig_username": info.username}
             except Exception:
                 pass
-            return {"requires_challenge": True, "challenge_type": "security_code", "session_id": session_id}
+            raise HTTPException(
+                status_code=422,
+                detail="Instagram returned an unexpected response. This may be due to a security check on your account. Please log into Instagram directly, approve any security prompts, then try again here."
+            )
         raise HTTPException(status_code=422, detail=f"Login failed: {str(e)}")
 
     except Exception as e:
