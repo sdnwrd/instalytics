@@ -90,6 +90,7 @@ async def forward_request(
         if k.lower() not in ("host", "x-internal-secret", "x-forwarded-for")
     }
     forward_headers["host"] = "www.instagram.com"
+    forward_headers["accept-encoding"] = "identity"  # disable compression so we can rewrite content
 
     body = await request.body()
     # Strip our token param before forwarding to Instagram
