@@ -1,7 +1,7 @@
 "use client"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Instagram, Shield, KeyRound } from "lucide-react"
+import { ArrowLeft, Shield, KeyRound } from "lucide-react"
 import Link from "next/link"
 
 type Step = "credentials" | "challenge"
@@ -84,7 +84,7 @@ export default function ConnectPage() {
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 rounded-2xl flex items-center justify-center"
               style={{ background: "var(--accent-bg)", border: "1px solid rgba(74,124,247,0.2)" }}>
-              <Instagram size={18} style={{ color: "var(--accent)" }} />
+              <span style={{ color: "var(--accent)", fontSize: 18, fontWeight: 700 }}>IG</span>
             </div>
             <div>
               <h1 className="text-[18px] font-bold tracking-tight" style={{ color: "var(--text)" }}>Connect Instagram</h1>
