@@ -14,7 +14,11 @@ def get_engine():
     global _engine
     if _engine is None:
         from app.config import get_settings
-        _engine = create_async_engine(get_settings().database_url, echo=False)
+        import ssl as _ssl
+        # Strip sslmode query param — asyncpg uses connect_args for SSL, not URL params
+        url = get_settings().database_url.split("?")[0]
+        ctx = _ssl.create_default_context()
+        _engine = create_async_engine(url, connect_args={"ssl": ctx}, echo=False)
     return _engine
 
 
