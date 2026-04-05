@@ -115,18 +115,18 @@ async def connect_instagram(_: AuthDep, body: ConnectRequest, db: DbDep):
 
     except TypeError as e:
         if "NoneType" in str(e):
-            # instagrapi parse error — login may have partially succeeded, try to recover
+            import traceback, logging
+            logging.error("instagrapi TypeError during login: %s", traceback.format_exc())
+            logging.error("cl.last_json: %s", cl.last_json)
+            # login may have partially succeeded, try to recover
             try:
                 info = cl.account_info()
                 session_dict = cl.get_settings()
                 await upsert_session(db, body.user_id, str(info.pk), info.username, session_dict)
                 return {"connected": True, "ig_username": info.username}
-            except Exception:
-                pass
-            raise HTTPException(
-                status_code=422,
-                detail="Instagram returned an unexpected response. This may be due to a security check on your account. Please log into Instagram directly, approve any security prompts, then try again here."
-            )
+            except Exception as inner:
+                logging.error("account_info recovery failed: %s", inner)
+            raise HTTPException(status_code=422, detail=f"instagrapi parse error — check Railway logs. last_json keys: {list(cl.last_json.keys()) if cl.last_json else 'None'}")
         raise HTTPException(status_code=422, detail=f"Login failed: {str(e)}")
 
     except Exception as e:
