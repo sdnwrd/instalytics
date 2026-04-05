@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-accent: var(--accent);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --color-warn: var(--warn);
+
+  --font-family-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-family-mono: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+}
+
+:root {
+  --bg:         #08080E;
+  --surface:    #111118;
+  --card:       rgba(255,255,255,0.05);
+  --card-hover: rgba(255,255,255,0.08);
+  --border:     rgba(255,255,255,0.08);
+  --border-hi:  rgba(255,255,255,0.14);
+  --text:       #F2F2FA;
+  --text-2:     rgba(242,242,250,0.55);
+  --text-3:     rgba(242,242,250,0.30);
+  --accent:     #4A7CF7;
+  --accent-bg:  rgba(74,124,247,0.12);
+  --success:    #34D399;
+  --danger:     #FB7185;
+  --warn:       #A78BFA;
+  --tab-h:      68px;
+}
+
+* { box-sizing: border-box; }
+
+html {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui,
+    "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }

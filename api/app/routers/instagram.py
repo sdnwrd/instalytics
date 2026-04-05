@@ -1,0 +1,214 @@
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
+from sqlalchemy import select
+from instagrapi.exceptions import LoginRequired
+
+from app.config import get_settings
+from app.crypto import decrypt_session, encrypt_session
+from app.deps import AuthDep, DbDep
+from app.models import InstagramSession, Snapshot, SnapshotUser
+from app.services.analytics_engine import compute_diff
+from app.services.instagram_client import fetch_followers_and_following, verify_session
+from app.services.proxy import forward_request
+from app.services.session_manager import (
+    delete_session,
+    get_session,
+    mark_needs_reconnect,
+    upsert_session,
+)
+
+router = APIRouter()
+
+# In-memory store for proxy tokens (TTL 10 min). In production, use Redis or DB table.
+_proxy_tokens: dict[str, dict] = {}
+
+
+class InitConnectResponse(BaseModel):
+    proxy_url: str
+    token: str
+
+
+class VerifyRequest(BaseModel):
+    token: str
+    user_id: str
+
+
+class StatusResponse(BaseModel):
+    connected: bool
+    ig_username: Optional[str]
+    status: Optional[str]
+    cooldown_seconds: Optional[int]
+
+
+@router.post("/init-connect", response_model=InitConnectResponse)
+async def init_connect(_: AuthDep, user_id: str):
+    token = str(uuid.uuid4())
+    _proxy_tokens[token] = {
+        "user_id": user_id,
+        "expires_at": datetime.now(timezone.utc) + timedelta(minutes=10),
+    }
+    proxy_url = f"{get_settings().proxy_base_url}/accounts/login/?token={token}"
+    return InitConnectResponse(proxy_url=proxy_url, token=token)
+
+
+@router.post("/verify-session")
+async def verify_session_endpoint(_: AuthDep, body: VerifyRequest, db: DbDep):
+    token_data = _proxy_tokens.get(body.token)
+    if not token_data:
+        raise HTTPException(status_code=404, detail="Token not found or expired")
+    if datetime.now(timezone.utc) > token_data["expires_at"]:
+        del _proxy_tokens[body.token]
+        raise HTTPException(status_code=410, detail="Token expired")
+    if token_data["user_id"] != body.user_id:
+        raise HTTPException(status_code=403, detail="Token user mismatch")
+
+    session_enc = token_data.get("session_enc")
+    if not session_enc:
+        raise HTTPException(status_code=400, detail="Session not captured yet")
+
+    session_dict = decrypt_session(session_enc)
+    try:
+        ig_user_id, ig_username = verify_session(session_dict)
+    except Exception:
+        raise HTTPException(status_code=422, detail="Instagram session invalid")
+
+    await upsert_session(db, body.user_id, ig_user_id, ig_username, session_dict)
+    del _proxy_tokens[body.token]
+    return {"connected": True, "ig_username": ig_username}
+
+
+@router.get("/status", response_model=StatusResponse)
+async def get_status(_: AuthDep, user_id: str, db: DbDep):
+    session = await get_session(db, user_id)
+    if not session:
+        return StatusResponse(connected=False, ig_username=None, status=None, cooldown_seconds=None)
+
+    cooldown_seconds = None
+    result = await db.execute(
+        select(Snapshot)
+        .where(Snapshot.user_id == user_id)
+        .order_by(Snapshot.taken_at.desc())
+        .limit(1)
+    )
+    last_snapshot = result.scalar_one_or_none()
+    if last_snapshot:
+        elapsed = (datetime.now(timezone.utc) - last_snapshot.taken_at).total_seconds()
+        remaining = 3600 - int(elapsed)
+        if remaining > 0:
+            cooldown_seconds = remaining
+
+    return StatusResponse(
+        connected=True,
+        ig_username=session.ig_username,
+        status=session.status,
+        cooldown_seconds=cooldown_seconds,
+    )
+
+
+@router.post("/fetch")
+async def fetch_snapshot(_: AuthDep, user_id: str, db: DbDep):
+    session = await get_session(db, user_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="No Instagram session found")
+    if session.status == "needs_reconnect":
+        raise HTTPException(status_code=409, detail="Session needs reconnect")
+
+    result = await db.execute(
+        select(Snapshot)
+        .where(Snapshot.user_id == user_id)
+        .order_by(Snapshot.taken_at.desc())
+        .limit(1)
+    )
+    last_snapshot = result.scalar_one_or_none()
+    if last_snapshot:
+        elapsed = (datetime.now(timezone.utc) - last_snapshot.taken_at).total_seconds()
+        if elapsed < 3600:
+            raise HTTPException(
+                status_code=429,
+                detail={"message": "Cooldown active", "retry_after": int(3600 - elapsed)},
+            )
+
+    session_dict = decrypt_session(session.session_json_enc)
+
+    try:
+        fetch_result = fetch_followers_and_following(session_dict)
+    except LoginRequired:
+        await mark_needs_reconnect(db, user_id)
+        raise HTTPException(status_code=401, detail="Instagram session expired")
+
+    snapshot_id = str(uuid.uuid4())
+    new_snapshot = Snapshot(
+        id=snapshot_id,
+        user_id=user_id,
+        follower_count=len(fetch_result.followers),
+        following_count=len(fetch_result.following),
+    )
+    db.add(new_snapshot)
+
+    for u in fetch_result.followers:
+        db.add(SnapshotUser(
+            id=str(uuid.uuid4()),
+            snapshot_id=snapshot_id,
+            ig_user_id=u.ig_user_id,
+            username=u.username,
+            full_name=u.full_name,
+            type="follower",
+        ))
+    for u in fetch_result.following:
+        db.add(SnapshotUser(
+            id=str(uuid.uuid4()),
+            snapshot_id=snapshot_id,
+            ig_user_id=u.ig_user_id,
+            username=u.username,
+            full_name=u.full_name,
+            type="following",
+        ))
+
+    await db.commit()
+
+    diff = {"unfollowers": [], "new_followers": [], "not_following_back": [], "you_dont_follow_back": []}
+    if last_snapshot:
+        prev_result = await db.execute(
+            select(SnapshotUser).where(SnapshotUser.snapshot_id == last_snapshot.id)
+        )
+        prev_users = prev_result.scalars().all()
+        prev_followers = {u.ig_user_id for u in prev_users if u.type == "follower"}
+        prev_following = {u.ig_user_id for u in prev_users if u.type == "following"}
+        curr_followers = {u.ig_user_id for u in fetch_result.followers}
+        curr_following = {u.ig_user_id for u in fetch_result.following}
+        diff = compute_diff(prev_followers, curr_followers, prev_following, curr_following)
+
+    return {
+        "snapshot_id": snapshot_id,
+        "follower_count": len(fetch_result.followers),
+        "following_count": len(fetch_result.following),
+        **diff,
+    }
+
+
+@router.delete("/session")
+async def revoke_session(_: AuthDep, user_id: str, db: DbDep):
+    await delete_session(db, user_id)
+    return {"deleted": True}
+
+
+# Proxy catch-all — handles all /instagram/proxy/* paths
+@router.api_route("/proxy/{path:path}", methods=["GET", "POST"])
+async def proxy_handler(request: Request, path: str, token: str = ""):
+    response, sessionid = await forward_request(request, path, get_settings().proxy_base_url)
+
+    if sessionid and token and token in _proxy_tokens:
+        from instagrapi import Client
+        cl = Client()
+        try:
+            cl.login_by_sessionid(sessionid)
+            session_dict = cl.get_settings()
+            _proxy_tokens[token]["session_enc"] = encrypt_session(session_dict)
+        except Exception:
+            pass  # session capture failed silently
+
+    return response
