@@ -1,9 +1,21 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import instagram, analytics
 
-app = FastAPI(title="Instalytics API", version="2.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from app.database import get_engine, Base
+    import app.models  # noqa: F401 — register all models
+    async with get_engine().begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+
+
+app = FastAPI(title="Instalytics API", version="2.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
