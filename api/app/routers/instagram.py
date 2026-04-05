@@ -199,7 +199,7 @@ async def revoke_session(_: AuthDep, user_id: str, db: DbDep):
 # Proxy catch-all — handles all /instagram/proxy/* paths
 @router.api_route("/proxy/{path:path}", methods=["GET", "POST"])
 async def proxy_handler(request: Request, path: str, token: str = ""):
-    response, sessionid = await forward_request(request, path, get_settings().proxy_base_url)
+    response, sessionid = await forward_request(request, path, get_settings().proxy_base_url, token)
 
     if sessionid and token and token in _proxy_tokens:
         from instagrapi import Client
