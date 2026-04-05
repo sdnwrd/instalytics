@@ -95,7 +95,13 @@ async def forward_request(
     # Strip our token param before forwarding to Instagram
     params = {k: v for k, v in request.query_params.items() if k != "token"}
 
-    async with httpx.AsyncClient(follow_redirects=False, timeout=30.0) as client:
+    import os
+    residential_proxy = os.environ.get("RESIDENTIAL_PROXY_URL")  # e.g. http://user:pass@proxy-host:port
+    async with httpx.AsyncClient(
+        follow_redirects=False,
+        timeout=30.0,
+        proxy=residential_proxy,
+    ) as client:
         ig_response = await client.request(
             method=request.method,
             url=target_url,
