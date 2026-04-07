@@ -146,11 +146,20 @@ async def resolve_challenge(_: AuthDep, body: ResolveChallengeRequest, db: DbDep
     try:
         cl: Client = pending["client"]
         if pending["type"] == "2fa":
-            # Call two_factor_login directly — avoids re-initiating login (which sends a new code)
-            cl.two_factor_login(
-                verification_code=body.code.strip(),
-                two_factor_identifier=pending.get("two_factor_identifier", ""),
-                username=pending["username"],
+            # POST directly to two_factor_login — avoids re-initiating login (which sends a new code)
+            cl.private_request(
+                "accounts/two_factor_login/",
+                {
+                    "username": pending["username"],
+                    "verificationCode": body.code.strip(),
+                    "identifier": pending.get("two_factor_identifier", ""),
+                    "trustThisDevice": "0",
+                    "phoneId": cl.phone_id,
+                    "_csrftoken": cl.token,
+                    "_uuid": cl.uuid,
+                    "deviceId": cl.android_device_id,
+                },
+                login=True,
             )
         else:
             cl.challenge_send_security_code(body.code.strip())
