@@ -23,11 +23,12 @@ class InstagramSession(Base):
 class Snapshot(Base):
     __tablename__ = "snapshots"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True)
-    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    taken_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    follower_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    following_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Column names match Prisma-created camelCase columns
+    id: Mapped[str] = mapped_column("id", String, primary_key=True)
+    user_id: Mapped[str] = mapped_column("userId", String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    taken_at: Mapped[datetime] = mapped_column("takenAt", DateTime(timezone=True), server_default=func.now())
+    follower_count: Mapped[int] = mapped_column("followerCount", Integer, nullable=False)
+    following_count: Mapped[int] = mapped_column("followingCount", Integer, nullable=False)
 
     snapshot_users: Mapped[list["SnapshotUser"]] = relationship(back_populates="snapshot")
 
@@ -35,17 +36,18 @@ class Snapshot(Base):
 class SnapshotUser(Base):
     __tablename__ = "snapshot_users"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True)
-    snapshot_id: Mapped[str] = mapped_column(String, ForeignKey("snapshots.id", ondelete="CASCADE"), nullable=False)
-    ig_user_id: Mapped[str] = mapped_column(String, nullable=False)
-    username: Mapped[str] = mapped_column(String, nullable=False)
-    full_name: Mapped[str | None] = mapped_column(String, nullable=True)
-    type: Mapped[str] = mapped_column(String, nullable=False)  # follower | following
+    # Column names match Prisma-created camelCase columns
+    id: Mapped[str] = mapped_column("id", String, primary_key=True)
+    snapshot_id: Mapped[str] = mapped_column("snapshotId", String, ForeignKey("snapshots.id", ondelete="CASCADE"), nullable=False)
+    ig_user_id: Mapped[str] = mapped_column("igUserId", String, nullable=False)
+    username: Mapped[str] = mapped_column("username", String, nullable=False)
+    full_name: Mapped[str | None] = mapped_column("fullName", String, nullable=True)
+    type: Mapped[str] = mapped_column("type", String, nullable=False)  # follower | following
 
     snapshot: Mapped["Snapshot"] = relationship(back_populates="snapshot_users")
 
     __table_args__ = (
-        Index("idx_snapshot_users_snapshot_type", "snapshot_id", "type"),
+        Index("idx_snapshot_users_snapshot_type", "snapshotId", "type"),
     )
 
 
