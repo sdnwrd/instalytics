@@ -91,6 +91,7 @@ async def connect_instagram(_: AuthDep, body: ConnectRequest, db: DbDep):
             "type": "2fa",
             "client": cl,
             "username": body.username,
+            "password": body.password,
             "two_factor_identifier": two_factor_info.get("two_factor_identifier", ""),
             "user_id": body.user_id,
             "expires_at": datetime.now(timezone.utc) + timedelta(minutes=10),
