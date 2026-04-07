@@ -128,7 +128,9 @@ async def connect_instagram(_: AuthDep, body: ConnectRequest, db: DbDep):
         raise HTTPException(status_code=422, detail=f"Login failed: {str(e)}")
 
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Login failed: {str(e)}")
+        import traceback, logging
+        logging.error("connect_instagram failed [%s]: %s", type(e).__name__, traceback.format_exc())
+        raise HTTPException(status_code=422, detail=f"Login failed [{type(e).__name__}]: {str(e)}")
 
 
 @router.post("/resolve-challenge")
