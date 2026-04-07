@@ -86,8 +86,10 @@ async def connect_instagram(_: AuthDep, body: ConnectRequest, db: DbDep):
 
     except TwoFactorRequired:
         session_id = str(uuid.uuid4())
+        # Store the client — it holds the 2FA identifier state needed to complete login
         _pending_logins[session_id] = {
             "type": "2fa",
+            "client": cl,
             "username": body.username,
             "password": body.password,
             "user_id": body.user_id,
@@ -140,11 +142,11 @@ async def resolve_challenge(_: AuthDep, body: ResolveChallengeRequest, db: DbDep
         raise HTTPException(status_code=410, detail="Session expired, please start over")
 
     try:
+        cl: Client = pending["client"]
         if pending["type"] == "2fa":
-            cl = _make_client()
+            # Reuse same client — it holds the 2FA identifier from the first login attempt
             cl.login(pending["username"], pending["password"], verification_code=body.code.strip())
         else:
-            cl: Client = pending["client"]
             cl.challenge_send_security_code(body.code.strip())
 
         session_dict = cl.get_settings()
