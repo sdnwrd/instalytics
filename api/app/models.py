@@ -9,14 +9,15 @@ from app.database import Base
 class InstagramSession(Base):
     __tablename__ = "instagram_sessions"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True)
-    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), unique=True)
-    ig_user_id: Mapped[str] = mapped_column(String, nullable=False)
-    ig_username: Mapped[str] = mapped_column(String, nullable=False)
-    session_json_enc: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
-    status: Mapped[str] = mapped_column(String, default="active")
-    last_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Column names match Prisma-created camelCase columns in Supabase
+    id: Mapped[str] = mapped_column("id", String, primary_key=True)
+    user_id: Mapped[str] = mapped_column("userId", String, ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    ig_user_id: Mapped[str] = mapped_column("igUserId", String, nullable=False)
+    ig_username: Mapped[str] = mapped_column("igUsername", String, nullable=False)
+    session_json_enc: Mapped[bytes] = mapped_column("sessionJsonEnc", LargeBinary, nullable=False)
+    status: Mapped[str] = mapped_column("status", String, default="active")
+    last_verified_at: Mapped[datetime | None] = mapped_column("lastVerifiedAt", DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column("createdAt", DateTime(timezone=True), server_default=func.now())
 
 
 class Snapshot(Base):
