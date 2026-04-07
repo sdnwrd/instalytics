@@ -84,14 +84,16 @@ async def connect_instagram(_: AuthDep, body: ConnectRequest, db: DbDep):
         await upsert_session(db, body.user_id, str(cl.user_id), cl.username, session_dict)
         return {"connected": True, "ig_username": cl.username}
 
-    except TwoFactorRequired:
+    except TwoFactorRequired as e:
+        import logging
+        logging.error("TwoFactorRequired exception args: %s, dict: %s", e.args, vars(e) if hasattr(e, '__dict__') else 'no dict')
         session_id = str(uuid.uuid4())
-        # Store the client — it holds the 2FA identifier state needed to complete login
         _pending_logins[session_id] = {
             "type": "2fa",
             "client": cl,
             "username": body.username,
             "password": body.password,
+            "two_factor_info": cl.last_json,
             "user_id": body.user_id,
             "expires_at": datetime.now(timezone.utc) + timedelta(minutes=10),
         }
@@ -155,7 +157,9 @@ async def resolve_challenge(_: AuthDep, body: ResolveChallengeRequest, db: DbDep
         return {"connected": True, "ig_username": cl.username}
 
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Code incorrect or expired: {str(e)}")
+        import traceback, logging
+        logging.error("resolve_challenge failed [type=%s]: %s", pending.get("type"), traceback.format_exc())
+        raise HTTPException(status_code=422, detail=f"[{pending.get('type')}] {str(e)}")
 
 
 @router.post("/init-connect", response_model=InitConnectResponse)
