@@ -146,21 +146,9 @@ async def resolve_challenge(_: AuthDep, body: ResolveChallengeRequest, db: DbDep
     try:
         cl: Client = pending["client"]
         if pending["type"] == "2fa":
-            # POST directly to two_factor_login — avoids re-initiating login (which sends a new code)
-            cl.private_request(
-                "accounts/two_factor_login/",
-                {
-                    "username": pending["username"],
-                    "verificationCode": body.code.strip(),
-                    "identifier": pending.get("two_factor_identifier", ""),
-                    "trustThisDevice": "0",
-                    "phoneId": cl.phone_id,
-                    "_csrftoken": cl.token,
-                    "_uuid": cl.uuid,
-                    "deviceId": cl.android_device_id,
-                },
-                login=True,
-            )
+            # Use same client — same device fingerprint means Instagram reuses the existing
+            # 2FA session and does NOT send a new code
+            cl.login(pending["username"], pending["password"], verification_code=body.code.strip())
         else:
             cl.challenge_send_security_code(body.code.strip())
 
