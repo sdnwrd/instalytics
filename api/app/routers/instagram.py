@@ -87,12 +87,15 @@ async def connect_instagram(_: AuthDep, body: ConnectRequest, db: DbDep):
     except TwoFactorRequired:
         session_id = str(uuid.uuid4())
         two_factor_info = (cl.last_json or {}).get("two_factor_info", {})
+        # verification_method: "1" = SMS, "0" = TOTP authenticator app
+        verification_method = "1" if two_factor_info.get("phone_number_preview") else "0"
         _pending_logins[session_id] = {
             "type": "2fa",
             "client": cl,
             "username": body.username,
             "password": body.password,
             "two_factor_identifier": two_factor_info.get("two_factor_identifier", ""),
+            "verification_method": verification_method,
             "user_id": body.user_id,
             "expires_at": datetime.now(timezone.utc) + timedelta(minutes=10),
         }
@@ -147,9 +150,23 @@ async def resolve_challenge(_: AuthDep, body: ResolveChallengeRequest, db: DbDep
     try:
         cl: Client = pending["client"]
         if pending["type"] == "2fa":
-            # Use same client — same device fingerprint means Instagram reuses the existing
-            # 2FA session and does NOT send a new code
-            cl.login(pending["username"], pending["password"], verification_code=body.code.strip())
+            # POST directly to two_factor_login with the ORIGINAL identifier —
+            # avoids re-initiating login which would send a new code and invalidate this one
+            cl.private_request(
+                "accounts/two_factor_login/",
+                {
+                    "username": pending["username"].lower(),
+                    "verification_code": body.code.strip(),
+                    "two_factor_identifier": pending.get("two_factor_identifier", ""),
+                    "trust_this_device": "0",
+                    "verification_method": pending.get("verification_method", "1"),
+                },
+                login=True,
+            )
+            # Extract user info from the response
+            logged_in = cl.last_json.get("logged_in_user", {})
+            cl.user_id = logged_in.get("pk") or cl.user_id
+            cl.username = logged_in.get("username") or cl.username
         else:
             cl.challenge_send_security_code(body.code.strip())
 
