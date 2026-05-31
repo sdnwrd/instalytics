@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils"
 const tabs = [
   { href: "/dashboard",  label: "Dashboard", Icon: Home },
   { href: "/analytics",  label: "Analytics",  Icon: BarChart2 },
-  { href: "/analytics?tab=followers", label: "Followers", Icon: Users },
   { href: "/settings",   label: "Settings",   Icon: Settings },
 ]
 
@@ -19,7 +18,7 @@ export function BottomNav() {
       style={{ height: "var(--tab-h)" }}
     >
       {tabs.map(({ href, label, Icon }) => {
-        const active = pathname === href || pathname.startsWith(href.split("?")[0])
+        const active = pathname === href
         return (
           <Link
             key={href}

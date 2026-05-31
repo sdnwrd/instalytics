@@ -54,7 +54,7 @@ export default function AnalyticsPage() {
       ) : users.length === 0 ? (
         <div className="px-5 py-8 text-[13px]" style={{ color: "var(--text-3)" }}>No data in this category yet.</div>
       ) : (
-        <div className="divide-y" style={{ borderColor: "var(--border)" }}>
+        <div className="divide-y divide-[var(--border)]">
           {users.map((u) => (
             <div key={u.ig_user_id} className="flex items-center gap-3 px-5 py-3 min-h-[64px]">
               <AvatarCircle username={u.username} size={40} />
