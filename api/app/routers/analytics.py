@@ -19,23 +19,35 @@ async def get_diff(_: AuthDep, user_id: str, db: DbDep):
     )
     snapshots = result.scalars().all()
 
-    if len(snapshots) < 2:
+    if not snapshots:
         return {"unfollowers": [], "new_followers": [], "not_following_back": [], "you_dont_follow_back": []}
-
-    curr_snap, prev_snap = snapshots[0], snapshots[1]
 
     async def get_users(snap_id: str):
         r = await db.execute(select(SnapshotUser).where(SnapshotUser.snapshot_id == snap_id))
         return r.scalars().all()
 
+    curr_snap = snapshots[0]
     curr_users = await get_users(curr_snap.id)
+    curr_followers = {u.ig_user_id for u in curr_users if u.type == "follower"}
+    curr_following = {u.ig_user_id for u in curr_users if u.type == "following"}
+
+    if len(snapshots) < 2:
+        # Single snapshot: can't compute unfollowers/new_followers, but can compute static sets
+        return compute_diff(
+            prev_followers=curr_followers,
+            curr_followers=curr_followers,
+            prev_following=curr_following,
+            curr_following=curr_following,
+        )
+
+    prev_snap = snapshots[1]
     prev_users = await get_users(prev_snap.id)
 
     return compute_diff(
         prev_followers={u.ig_user_id for u in prev_users if u.type == "follower"},
-        curr_followers={u.ig_user_id for u in curr_users if u.type == "follower"},
+        curr_followers=curr_followers,
         prev_following={u.ig_user_id for u in prev_users if u.type == "following"},
-        curr_following={u.ig_user_id for u in curr_users if u.type == "following"},
+        curr_following=curr_following,
     )
 
 
