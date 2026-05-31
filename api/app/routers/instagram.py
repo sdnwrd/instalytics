@@ -8,6 +8,7 @@ from instagrapi import Client
 from instagrapi.exceptions import (
     BadPassword,
     ChallengeRequired,
+    ChallengeUnknownStep,
     LoginRequired,
     TwoFactorRequired,
 )
@@ -115,6 +116,12 @@ async def connect_instagram(_: AuthDep, body: ConnectRequest, db: DbDep):
             "expires_at": datetime.now(timezone.utc) + timedelta(minutes=10),
         }
         return {"requires_challenge": True, "challenge_type": "security_code", "session_id": session_id}
+
+    except ChallengeUnknownStep:
+        raise HTTPException(
+            status_code=403,
+            detail="Instagram flagged this login as suspicious. Please open the Instagram app, log in manually to clear the alert, then try again."
+        )
 
     except BadPassword:
         raise HTTPException(status_code=401, detail="Incorrect username or password")
