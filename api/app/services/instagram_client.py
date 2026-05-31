@@ -49,9 +49,11 @@ def fetch_followers_and_following(session_dict: dict, ig_user_id: str | None = N
     Fetch current followers and following lists.
     Raises LoginRequired if session is expired.
     """
+    # Patch user_id into session so instagrapi uses it everywhere (rank_token, etc.)
+    if ig_user_id and not session_dict.get("user_id"):
+        session_dict = {**session_dict, "user_id": int(ig_user_id)}
     cl = _build_client(session_dict)
-    # Prefer DB-stored ig_user_id over cl.user_id which may be None after 2FA login
-    user_id = ig_user_id or cl.user_id
+    user_id = cl.user_id or ig_user_id
     ig_username = cl.username
 
     raw_followers = cl.user_followers(user_id)
