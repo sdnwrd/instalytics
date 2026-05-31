@@ -163,17 +163,18 @@ async def resolve_challenge(_: AuthDep, body: ResolveChallengeRequest, db: DbDep
                 },
                 login=True,
             )
-            # Extract user info from the response
             logged_in = cl.last_json.get("logged_in_user", {})
-            cl.user_id = logged_in.get("pk") or cl.user_id
-            cl.username = logged_in.get("username") or cl.username
+            ig_user_id = str(logged_in.get("pk") or cl.user_id)
+            ig_username = logged_in.get("username") or cl.username
         else:
             cl.challenge_send_security_code(body.code.strip())
+            ig_user_id = str(cl.user_id)
+            ig_username = cl.username
 
         session_dict = cl.get_settings()
-        await upsert_session(db, body.user_id, str(cl.user_id), cl.username, session_dict)
+        await upsert_session(db, body.user_id, ig_user_id, ig_username, session_dict)
         _pending_logins.pop(body.session_id, None)
-        return {"connected": True, "ig_username": cl.username}
+        return {"connected": True, "ig_username": ig_username}
 
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"[{pending.get('type')}] {str(e)}")

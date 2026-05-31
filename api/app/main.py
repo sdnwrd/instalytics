@@ -29,6 +29,6 @@ app.include_router(instagram.router, prefix="/instagram", tags=["instagram"])
 app.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health():
     return {"status": "ok"}
