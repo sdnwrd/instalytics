@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { signOut } from "next-auth/react"
 import { CheckCircle } from "lucide-react"
@@ -8,12 +8,22 @@ export default function SettingsPage() {
   const router = useRouter()
   const [disconnecting, setDisconnecting] = useState(false)
   const [deletingAccount, setDeletingAccount] = useState(false)
+  const [connected, setConnected] = useState<boolean | null>(null)
+  const [igUsername, setIgUsername] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch("/api/instagram/status")
+      .then(r => r.json())
+      .then(d => { setConnected(d.connected ?? false); setIgUsername(d.ig_username ?? null) })
+      .catch(() => setConnected(false))
+  }, [])
 
   async function handleDisconnect() {
     if (!confirm("Disconnect Instagram? Your snapshot history will be kept.")) return
     setDisconnecting(true)
     await fetch("/api/instagram/session", { method: "DELETE" })
-    router.refresh()
+    setConnected(false)
+    setIgUsername(null)
     setDisconnecting(false)
   }
 
@@ -37,18 +47,31 @@ export default function SettingsPage() {
             <p className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-3)" }}>Instagram Account</p>
           </div>
           <div className="px-4 py-4 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <CheckCircle size={16} strokeWidth={1.8} style={{ color: "var(--success)", flexShrink: 0 }} />
-              <div>
-                <p className="text-[14px] font-medium" style={{ color: "var(--text)" }}>Connected</p>
-                <p className="text-[12px]" style={{ color: "var(--text-3)" }}>Encrypted session active</p>
-              </div>
-            </div>
-            <button onClick={handleDisconnect} disabled={disconnecting}
-              className="text-[13px] font-medium hover:opacity-80 transition-opacity disabled:opacity-50"
-              style={{ color: "var(--danger)" }}>
-              {disconnecting ? "Disconnecting…" : "Disconnect"}
-            </button>
+            {connected === null ? (
+              <div className="h-4 w-32 rounded animate-pulse" style={{ background: "var(--border)" }} />
+            ) : connected ? (
+              <>
+                <div className="flex items-center gap-2.5">
+                  <CheckCircle size={16} strokeWidth={1.8} style={{ color: "var(--success)", flexShrink: 0 }} />
+                  <div>
+                    <p className="text-[14px] font-medium" style={{ color: "var(--text)" }}>
+                      {igUsername ? `@${igUsername}` : "Connected"}
+                    </p>
+                    <p className="text-[12px]" style={{ color: "var(--text-3)" }}>Encrypted session active</p>
+                  </div>
+                </div>
+                <button onClick={handleDisconnect} disabled={disconnecting}
+                  className="text-[13px] font-medium hover:opacity-80 transition-opacity disabled:opacity-50"
+                  style={{ color: "var(--danger)" }}>
+                  {disconnecting ? "Disconnecting…" : "Disconnect"}
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-[14px]" style={{ color: "var(--text-2)" }}>No account connected</p>
+                <a href="/connect" className="text-[13px] font-medium" style={{ color: "var(--accent)" }}>Connect</a>
+              </>
+            )}
           </div>
         </section>
 

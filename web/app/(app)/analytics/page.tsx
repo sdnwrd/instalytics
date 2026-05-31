@@ -12,14 +12,14 @@ interface DiffData {
 }
 
 const tabs: { key: Tab; label: string }[] = [
-  { key: "unfollowers",          label: "Unfollowers" },
-  { key: "new_followers",        label: "New Followers" },
   { key: "not_following_back",   label: "Not Following Back" },
   { key: "you_dont_follow_back", label: "You Don't Follow Back" },
+  { key: "unfollowers",          label: "Unfollowers" },
+  { key: "new_followers",        label: "New Followers" },
 ]
 
 export default function AnalyticsPage() {
-  const [active, setActive] = useState<Tab>("unfollowers")
+  const [active, setActive] = useState<Tab>("not_following_back")
   const [data, setData] = useState<DiffData | null>(null)
   const [loading, setLoading] = useState(true)
 
