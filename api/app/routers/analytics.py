@@ -8,6 +8,16 @@ from app.services.analytics_engine import compute_diff
 router = APIRouter()
 
 
+def _to_user_objects(ig_user_ids: list[str], lookup: dict) -> list[dict]:
+    """Convert a list of ig_user_ids to full user objects using a lookup dict."""
+    result = []
+    for uid in ig_user_ids:
+        u = lookup.get(uid)
+        if u:
+            result.append({"ig_user_id": u.ig_user_id, "username": u.username, "full_name": u.full_name or ""})
+    return result
+
+
 @router.get("/diff")
 async def get_diff(_: AuthDep, user_id: str, db: DbDep):
     """Return the diff between the two most recent snapshots."""
@@ -28,27 +38,42 @@ async def get_diff(_: AuthDep, user_id: str, db: DbDep):
 
     curr_snap = snapshots[0]
     curr_users = await get_users(curr_snap.id)
+    curr_lookup = {u.ig_user_id: u for u in curr_users}
     curr_followers = {u.ig_user_id for u in curr_users if u.type == "follower"}
     curr_following = {u.ig_user_id for u in curr_users if u.type == "following"}
 
     if len(snapshots) < 2:
-        # Single snapshot: can't compute unfollowers/new_followers, but can compute static sets
-        return compute_diff(
+        diff = compute_diff(
             prev_followers=curr_followers,
             curr_followers=curr_followers,
             prev_following=curr_following,
             curr_following=curr_following,
         )
+    else:
+        prev_snap = snapshots[1]
+        prev_users = await get_users(prev_snap.id)
+        prev_lookup = {u.ig_user_id: u for u in prev_users}
+        diff = compute_diff(
+            prev_followers={u.ig_user_id for u in prev_users if u.type == "follower"},
+            curr_followers=curr_followers,
+            prev_following={u.ig_user_id for u in prev_users if u.type == "following"},
+            curr_following=curr_following,
+        )
+        # For unfollowers/new_followers, fall back to prev_lookup for users not in curr
+        combined_lookup = {**prev_lookup, **curr_lookup}
+        return {
+            "unfollowers": _to_user_objects(diff["unfollowers"], combined_lookup),
+            "new_followers": _to_user_objects(diff["new_followers"], combined_lookup),
+            "not_following_back": _to_user_objects(diff["not_following_back"], curr_lookup),
+            "you_dont_follow_back": _to_user_objects(diff["you_dont_follow_back"], curr_lookup),
+        }
 
-    prev_snap = snapshots[1]
-    prev_users = await get_users(prev_snap.id)
-
-    return compute_diff(
-        prev_followers={u.ig_user_id for u in prev_users if u.type == "follower"},
-        curr_followers=curr_followers,
-        prev_following={u.ig_user_id for u in prev_users if u.type == "following"},
-        curr_following=curr_following,
-    )
+    return {
+        "unfollowers": [],
+        "new_followers": [],
+        "not_following_back": _to_user_objects(diff["not_following_back"], curr_lookup),
+        "you_dont_follow_back": _to_user_objects(diff["you_dont_follow_back"], curr_lookup),
+    }
 
 
 @router.get("/history")
