@@ -50,8 +50,9 @@ def fetch_followers_and_following(session_dict: dict) -> FetchResult:
     Raises LoginRequired if session is expired.
     """
     cl = _build_client(session_dict)
-    info = cl.account_info()
-    user_id = info.pk
+    # user_id and username are already in the session — no need for account_info() API call
+    user_id = cl.user_id
+    ig_username = cl.username
 
     raw_followers = cl.user_followers(user_id)
     raw_following = cl.user_following(user_id)
@@ -65,7 +66,7 @@ def fetch_followers_and_following(session_dict: dict) -> FetchResult:
 
     return FetchResult(
         ig_user_id=str(user_id),
-        ig_username=info.username,
+        ig_username=ig_username,
         followers=[to_ig_user(u) for u in raw_followers.values()],
         following=[to_ig_user(u) for u in raw_following.values()],
     )
