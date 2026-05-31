@@ -1,4 +1,4 @@
-const FASTAPI_URL = process.env.API_BASE_URL!
+const FASTAPI_URL = process.env.FASTAPI_URL!
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET!
 
 export async function callFastAPI<T>(
