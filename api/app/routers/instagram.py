@@ -242,7 +242,8 @@ async def get_status(_: AuthDep, user_id: str, db: DbDep):
     )
     last_snapshot = result.scalar_one_or_none()
     if last_snapshot:
-        elapsed = (datetime.now(timezone.utc) - last_snapshot.taken_at).total_seconds()
+        taken_at = last_snapshot.taken_at.replace(tzinfo=timezone.utc) if last_snapshot.taken_at.tzinfo is None else last_snapshot.taken_at
+        elapsed = (datetime.now(timezone.utc) - taken_at).total_seconds()
         remaining = 3600 - int(elapsed)
         if remaining > 0:
             cooldown_seconds = remaining
@@ -271,7 +272,8 @@ async def fetch_snapshot(_: AuthDep, user_id: str, db: DbDep):
     )
     last_snapshot = result.scalar_one_or_none()
     if last_snapshot:
-        elapsed = (datetime.now(timezone.utc) - last_snapshot.taken_at).total_seconds()
+        taken_at = last_snapshot.taken_at.replace(tzinfo=timezone.utc) if last_snapshot.taken_at.tzinfo is None else last_snapshot.taken_at
+        elapsed = (datetime.now(timezone.utc) - taken_at).total_seconds()
         if elapsed < 3600:
             raise HTTPException(
                 status_code=429,
