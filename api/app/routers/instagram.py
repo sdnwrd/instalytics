@@ -172,6 +172,9 @@ async def resolve_challenge(_: AuthDep, body: ResolveChallengeRequest, db: DbDep
             ig_username = cl.username
 
         session_dict = cl.get_settings()
+        # Ensure user_id is correctly set in session dict (may be None after 2FA)
+        if ig_user_id and ig_user_id != "None":
+            session_dict["user_id"] = int(ig_user_id)
         await upsert_session(db, body.user_id, ig_user_id, ig_username, session_dict)
         _pending_logins.pop(body.session_id, None)
         return {"connected": True, "ig_username": ig_username}
@@ -271,7 +274,7 @@ async def fetch_snapshot(_: AuthDep, user_id: str, db: DbDep):
     session_dict = decrypt_session(session.session_json_enc)
 
     try:
-        fetch_result = fetch_followers_and_following(session_dict)
+        fetch_result = fetch_followers_and_following(session_dict, session.ig_user_id)
     except LoginRequired:
         await mark_needs_reconnect(db, user_id)
         raise HTTPException(status_code=401, detail="Instagram session expired")

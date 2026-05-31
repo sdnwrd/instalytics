@@ -44,14 +44,14 @@ def verify_session(session_dict: dict) -> tuple[str, str]:
     return str(info.pk), info.username
 
 
-def fetch_followers_and_following(session_dict: dict) -> FetchResult:
+def fetch_followers_and_following(session_dict: dict, ig_user_id: str | None = None) -> FetchResult:
     """
     Fetch current followers and following lists.
     Raises LoginRequired if session is expired.
     """
     cl = _build_client(session_dict)
-    # user_id and username are already in the session — no need for account_info() API call
-    user_id = cl.user_id
+    # Prefer DB-stored ig_user_id over cl.user_id which may be None after 2FA login
+    user_id = ig_user_id or cl.user_id
     ig_username = cl.username
 
     raw_followers = cl.user_followers(user_id)
