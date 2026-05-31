@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 from typing import Optional
 
@@ -22,6 +23,9 @@ class FetchResult:
 
 def _build_client(session_dict: dict) -> Client:
     cl = Client()
+    proxy_url = os.environ.get("RESIDENTIAL_PROXY_URL")
+    if proxy_url:
+        cl.set_proxy(proxy_url)
     cl.set_settings(session_dict)
     return cl
 

@@ -275,6 +275,8 @@ async def fetch_snapshot(_: AuthDep, user_id: str, db: DbDep):
     except LoginRequired:
         await mark_needs_reconnect(db, user_id)
         raise HTTPException(status_code=401, detail="Instagram session expired")
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Instagram request failed: {str(e)}")
 
     snapshot_id = str(uuid.uuid4())
     new_snapshot = Snapshot(
