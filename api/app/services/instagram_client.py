@@ -22,10 +22,14 @@ class FetchResult:
 
 
 def _build_client(session_dict: dict) -> Client:
+    import logging
     cl = Client()
     proxy_url = os.environ.get("RESIDENTIAL_PROXY_URL")
     if proxy_url:
         cl.set_proxy(proxy_url)
+        logging.info("instagram_client: using proxy %s", proxy_url[:30])
+    else:
+        logging.warning("instagram_client: no proxy set — RESIDENTIAL_PROXY_URL missing")
     cl.set_settings(session_dict)
     return cl
 
