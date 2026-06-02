@@ -1,4 +1,3 @@
-import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -20,7 +19,11 @@ from app.crypto import decrypt_session, encrypt_session
 from app.deps import AuthDep, DbDep
 from app.models import InstagramSession, Snapshot, SnapshotUser
 from app.services.analytics_engine import compute_diff
-from app.services.instagram_client import fetch_followers_and_following, verify_session
+from app.services.instagram_client import (
+    fetch_followers_and_following,
+    make_client,
+    verify_session,
+)
 from app.services.proxy import forward_request
 from app.services.session_manager import (
     delete_session,
@@ -39,11 +42,7 @@ _pending_logins: dict[str, dict] = {}
 
 
 def _make_client() -> Client:
-    cl = Client()
-    proxy_url = os.environ.get("RESIDENTIAL_PROXY_URL")
-    if proxy_url:
-        cl.set_proxy(proxy_url)
-    return cl
+    return make_client()
 
 
 class InitConnectResponse(BaseModel):
@@ -281,9 +280,12 @@ async def fetch_snapshot(_: AuthDep, user_id: str, db: DbDep):
             )
 
     session_dict = decrypt_session(session.session_json_enc)
+    is_first_fetch = last_snapshot is None
 
     try:
-        fetch_result = fetch_followers_and_following(session_dict, session.ig_user_id)
+        fetch_result = fetch_followers_and_following(
+            session_dict, session.ig_user_id, warmup=is_first_fetch
+        )
     except LoginRequired:
         await mark_needs_reconnect(db, user_id)
         raise HTTPException(status_code=401, detail="Instagram session expired")

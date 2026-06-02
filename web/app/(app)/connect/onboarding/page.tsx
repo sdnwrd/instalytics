@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation"
 
 const messages = [
   "Connecting to Instagram…",
+  "Warming up your session…",
   "Fetching your followers…",
   "Fetching who you follow…",
   "Crunching the numbers…",
@@ -55,7 +56,7 @@ export default function OnboardingPage() {
       <p className="text-[15px] font-medium transition-all duration-500" style={{ color: "var(--text)" }}>
         {messages[msgIndex]}
       </p>
-      <p className="text-[12px]" style={{ color: "var(--text-3)" }}>This takes about 10–20 seconds</p>
+      <p className="text-[12px]" style={{ color: "var(--text-3)" }}>This takes about 30–60 seconds</p>
     </div>
   )
 }
