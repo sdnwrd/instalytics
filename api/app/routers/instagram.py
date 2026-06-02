@@ -1,3 +1,5 @@
+import logging
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -10,8 +12,10 @@ from instagrapi.exceptions import (
     ChallengeUnknownStep,
     LoginRequired,
     TwoFactorRequired,
+    UnknownError,
 )
 from pydantic import BaseModel
+from requests.exceptions import ConnectionError as RequestsConnectionError, Timeout
 from sqlalchemy import select
 
 from app.config import get_settings
@@ -43,6 +47,26 @@ _pending_logins: dict[str, dict] = {}
 
 def _make_client() -> Client:
     return make_client()
+
+
+def _login_with_retry(cl: Client, username: str, password: str) -> None:
+    """
+    Run cl.login with one retry on transient network errors.
+    instagrapi makes a pre-login /launcher/sync/ call that occasionally
+    fails with RemoteDisconnected; without retry, the subsequent login
+    request hits IG in a half-initialized state and returns a misleading
+    "user not found" 400.
+    """
+    for attempt in range(2):
+        try:
+            cl.login(username, password)
+            return
+        except (RequestsConnectionError, Timeout) as e:
+            logging.warning("login attempt %d/2 network error: %s", attempt + 1, e)
+            if attempt == 0:
+                time.sleep(2)
+                continue
+            raise
 
 
 class InitConnectResponse(BaseModel):
@@ -79,7 +103,7 @@ async def connect_instagram(_: AuthDep, body: ConnectRequest, db: DbDep):
     """Login with username/password. Returns connected or challenge info."""
     cl = _make_client()
     try:
-        cl.login(body.username, body.password)
+        _login_with_retry(cl, body.username, body.password)
         session_dict = cl.get_settings()
         await upsert_session(db, body.user_id, str(cl.user_id), cl.username, session_dict)
         return {"connected": True, "ig_username": cl.username}
@@ -106,8 +130,11 @@ async def connect_instagram(_: AuthDep, body: ConnectRequest, db: DbDep):
         # Initiate the challenge so Instagram sends the SMS/email code
         try:
             cl.challenge_resolve(cl.last_json)
-        except Exception:
-            pass
+        except Exception as e:
+            logging.warning(
+                "ChallengeRequired: challenge_resolve failed user=%s err=%s last_json=%s",
+                body.username, e, cl.last_json,
+            )
         _pending_logins[session_id] = {
             "type": "challenge",
             "client": cl,
@@ -117,29 +144,71 @@ async def connect_instagram(_: AuthDep, body: ConnectRequest, db: DbDep):
         return {"requires_challenge": True, "challenge_type": "security_code", "session_id": session_id}
 
     except ChallengeUnknownStep:
+        challenge = (cl.last_json or {}).get("challenge", {})
+        step_name = challenge.get("step_name") or (cl.last_json or {}).get("step_name")
+        logging.warning(
+            "ChallengeUnknownStep user=%s step_name=%s last_json=%s",
+            body.username, step_name, cl.last_json,
+        )
         raise HTTPException(
             status_code=403,
-            detail="Instagram flagged this login as suspicious. Please open the Instagram app, log in manually to clear the alert, then try again."
+            detail=(
+                "Instagram is asking for an extra verification we can't handle automatically. "
+                "Open the Instagram app on your phone, check for a 'review login attempt' notification "
+                "and approve it, then try again. If that doesn't help, wait 1–2 hours and retry."
+            ),
         )
 
     except BadPassword:
         raise HTTPException(status_code=401, detail="Incorrect username or password")
 
+    except (RequestsConnectionError, Timeout) as e:
+        logging.warning("connect network error after retry user=%s err=%s", body.username, e)
+        raise HTTPException(
+            status_code=503,
+            detail="Couldn't reach Instagram. Please try again in a moment.",
+        )
+
+    except UnknownError as e:
+        last = cl.last_json or {}
+        logging.warning(
+            "UnknownError user=%s message=%s last_json=%s",
+            body.username, str(e), last,
+        )
+        msg = (last.get("message") or "").lower()
+        if "find" in str(e).lower() or "find" in msg:
+            # IG often returns 400 "can't find account" when the pre-login proxy/network call hiccupped.
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Instagram returned an unexpected response — this is usually a temporary network issue. "
+                    "Please double-check your username and try again in a moment."
+                ),
+            )
+        raise HTTPException(status_code=502, detail=f"Instagram error: {str(e)}")
+
     except TypeError as e:
         if "NoneType" in str(e):
             last = cl.last_json or {}
             msg = last.get("message", "")
+            logging.warning(
+                "TypeError NoneType user=%s message=%s last_json=%s",
+                body.username, msg, last,
+            )
             if "wait" in msg.lower() or "few minutes" in msg.lower():
                 raise HTTPException(
                     status_code=429,
-                    detail="Instagram is temporarily rate-limiting this server. Please wait 5–10 minutes and try again."
+                    detail="Instagram is temporarily rate-limiting this server. Please wait 5–10 minutes and try again.",
                 )
             raise HTTPException(status_code=422, detail="Instagram returned an unexpected response. Please try again in a few minutes.")
         raise HTTPException(status_code=422, detail=f"Login failed: {str(e)}")
 
     except Exception as e:
-        import traceback, logging
-        logging.error("connect_instagram failed [%s]: %s", type(e).__name__, traceback.format_exc())
+        import traceback
+        logging.error(
+            "connect_instagram failed user=%s [%s]: last_json=%s\n%s",
+            body.username, type(e).__name__, cl.last_json, traceback.format_exc(),
+        )
         raise HTTPException(status_code=422, detail=f"Login failed [{type(e).__name__}]: {str(e)}")
 
 
