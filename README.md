@@ -2,7 +2,7 @@
 
 A multi-user web app that tracks Instagram followers over time and shows who unfollowed, and when.
 
-Instagram's official API returns current counts only — no history, no follower lists. So the app
+Instagram's official API returns current counts only - no history, no follower lists. So the app
 takes its own snapshots on a schedule and diffs them.
 
 ## Status
@@ -88,13 +88,13 @@ cd web
 cp .env.local.example .env.local     # fill in DATABASE_URL first
 npx prisma migrate dev --name init
 
-# terminal 1 — FastAPI
+# terminal 1 - FastAPI
 cd api
 pip install -r requirements.txt
 cp .env.example .env
 uvicorn app.main:app --reload
 
-# terminal 2 — Next.js
+# terminal 2 - Next.js
 cd web
 npm install
 npm run dev
