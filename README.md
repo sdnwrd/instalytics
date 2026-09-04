@@ -102,9 +102,5 @@ npm run dev
 
 ## What I would do differently
 
-Version 1 was a local Python script for exactly one account. It fell apart the moment a second
-person wanted to use it: no user separation, no database, session data sitting in a file next to the
-script. The rewrite was worth it only because I could name the wrong assumption — "one user".
-
-The bigger lesson came earlier than any of the code: check whether you are allowed to ship the thing
+The lesson came earlier than any of the code: check whether you are allowed to ship the thing
 before you build it.
